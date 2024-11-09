@@ -115,7 +115,8 @@ class Game:
                         direction = self.get_direction(start, next_position)
                         command = {"command": "MOVE", "unit": unit_id, "dir": direction}
                     else:
-                        command = {"command": "MOVE", "unit": unit_id, "dir": "S"}
+                        random_direction = random.choice(self.directions)
+                        command = {"command": "MOVE", "unit": unit_id, "dir": random_direction}
 
                 else:  # Worker is not carrying a resource
                     # Attempt to move towards a resource if available
