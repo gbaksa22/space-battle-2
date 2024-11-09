@@ -21,19 +21,18 @@ class NetworkHandler(ss.StreamRequestHandler):
             json_data = json.loads(str(data))
             # uncomment the following line to see pretty-printed data
             # print(json.dumps(json_data, indent=4, sort_keys=True))
-            response = game.get_random_move(json_data).encode()
+            response = game.get_command(json_data).encode()
             self.wfile.write(response)
-
-
 
 class Game:
     def __init__(self):
-        self.units = set() # set of unique unit ids
+        self.units = {}  # Dictionary to store unit details by unit ID
         self.directions = ['N', 'S', 'E', 'W']
         self.map = []  # 2D array for the game map
         self.width = 0
         self.height = 0
         self.player_id = None
+
         #self.map = [[' ' for _ in range(10)] for _ in range(10)]  # Example 10x10 grid map for simplicity
 
     def initialize_map(self, game_info):
@@ -42,39 +41,65 @@ class Game:
         # Creates a 2D array filled with '?'
         self.map = [['?' for _ in range(2 * self.width + 1)] for _ in range(2 * self.height + 1)]
 
-    def update_map(self, tile_updates, unit_updates):
-        # Update map based on tile updates
-        for tile in tile_updates:
-            x, y = tile['x'], tile['y']
-            if tile['blocked']:
-                self.map[y][x] = '#'
-            elif tile['resources']:
-                self.map[y][x] = 'R'
-            elif tile['units']:
-                self.map[y][x] = 'E'
-            else:
-                self.map[y][x] = ' '
+    def update_map(self, json_data):
+        if 'tile_updates' in json_data:
+            tile_updates = json_data['tile_updates']
+            for tile in tile_updates:
+                x, y = tile['x'], tile['y']
+                
+                # Check if resources are present on the tile
+                if tile['resources']:
+                    resource = tile['resources']
+                    print(f"Resource found at ({x}, {y}): Type = {resource['type']}, Total = {resource['total']}, Value per load = {resource['value']}")
+                    self.map[y][x] = 'r'  # Mark tile with 'r' for resources
 
-        # Update map based on unit updates
-        for unit in unit_updates:
-            x, y = unit['x'], unit['y']
-            if unit['type'] == 'base' and unit['player_id'] == self.player_id:
-                self.map[y][x] = 'B'
-            elif unit['player_id'] != self.player_id:
-                self.map[y][x] = 'E'
+                elif tile['blocked']:
+                    self.map[y][x] = '#'
+                elif tile['units']:
+                    self.map[y][x] = 'E'  # Enemy unit
+                else:
+                    self.map[y][x] = ' '  # Empty tile
+
+        if 'unit_updates' in json_data:
+            for unit in json_data['unit_updates']:
+                x, y = unit['x'], unit['y']
+                if unit['player_id'] == self.player_id:
+                    if unit['type'] == 'base':
+                        self.map[y][x] = 'b'  # Our base
+                    elif unit['type'] == 'worker':
+                        self.map[y][x] = 'w'  # Our worker
+                else:
+                    self.map[y][x] = 'E'  # Enemy unit if it's not our player_id
 
     def get_map(self):
         return self.map
+    
+    def print_map(self):
+        print("Current Map:")
+        for row in self.map:
+            print(''.join(row))
+        print()  # Extra newline for readability
 
-    def get_random_move(self, json_data):
-        units = set([unit['id'] for unit in json_data['unit_updates'] if unit['type'] != 'base'])
-        self.units |= units # add any additional ids we encounter
-        unit = random.choice(tuple(self.units))
-        direction = random.choice(self.directions)
-        move = 'MOVE'
-        command = {"commands": [{"command": move, "unit": unit, "dir": direction}]}
-        response = json.dumps(command, separators=(',',':')) + '\n'
-        return response
+    def get_command(self, json_data):
+        # Initialize map on the first turn if necessary
+        if 'game_info' in json_data and not self.map:
+            self.initialize_map(json_data['game_info'])
+            self.player_id = json_data['player']
+
+        # Update the map with new tile and unit data each turn
+        self.update_map(json_data)
+        
+        # Print the updated map
+        #self.print_map()
+
+        # Example command to move a worker (placeholder)
+        commands = []
+        for unit_id, unit in self.units.items():
+            if unit['type'] == 'worker':  # Example condition
+                command = {"command": "MOVE", "unit": unit_id, "dir": "S"}
+                commands.append(command)
+
+        return json.dumps({"commands": commands}, separators=(',', ':')) + '\n'
 
 if __name__ == "__main__":
     port = int(sys.argv[1]) if (len(sys.argv) > 1 and sys.argv[1]) else 9090
