@@ -67,19 +67,21 @@ class Game:
         return self.map
 
     def get_command(self, json_data):
-        # Update units and resources based on incoming JSON data
-        self.update_units(json_data['unit_updates'])
+        # Initialize map if it hasn't been set up yet
+        if not self.map:
+            self.initialize_map(json_data['game_info'])
+        
+        # Update map each turn
+        self.update_map(json_data['tile_updates'], json_data['unit_updates'])
 
+        # Example command generation for units
         commands = []
         for unit_id, unit in self.units.items():
             if unit['type'] == 'worker':
-                # Assign gathering task if resources are nearby
                 command = self.worker_behavior(unit)
             elif unit['type'] == 'scout':
-                # Assign exploration task for scouts
                 command = self.scout_behavior(unit)
             elif unit['type'] == 'tank':
-                # Basic tank behavior can be defensive or hold position
                 command = self.tank_behavior(unit)
             
             if command:
@@ -87,7 +89,6 @@ class Game:
         
         response = json.dumps({"commands": commands}, separators=(',', ':')) + '\n'
         return response
-
     def update_units(self, unit_updates):
         # Update unit states based on the latest game data
         for unit in unit_updates:
