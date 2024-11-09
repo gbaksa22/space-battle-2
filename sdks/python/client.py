@@ -1,5 +1,6 @@
 #!/usr/bin/python
 
+from collections import deque
 import sys
 import json
 import random
@@ -78,8 +79,8 @@ class Game:
             print(''.join(row))
         print()  # Extra newline for readability
 
-    def get_command(self, json_data): 
-        # Initialize map on the first turn if necessary
+    def get_command(self, json_data):
+        # Initialize map and player_id if necessary
         if 'game_info' in json_data and not self.map:
             self.initialize_map(json_data['game_info'])
             self.player_id = json_data['player']
@@ -87,42 +88,91 @@ class Game:
         # Update the map with new tile and unit data each turn
         self.update_map(json_data)
 
-        # Generate commands for units
+        # Generate commands for each worker unit
         commands = []
         for unit_id in self.units:
             unit = self.unit_info[unit_id]
+            start = (unit['x'], unit['y'])
+            
             if unit['type'] == 'worker':
-                x, y = unit['x'], unit['y']
+                # Perform BFS to locate the nearest resource
+                path = self.bfs_find_path(start, target='r')
                 
-                # Check surrounding tiles for resources
-                adjacent_tiles = {
-                    'N': (x, y - 1),
-                    'S': (x, y + 1),
-                    'W': (x - 1, y),
-                    'E': (x + 1, y)
-                }
-                resource_direction = None
-                
-                for direction, (adj_x, adj_y) in adjacent_tiles.items():
-                    if self.is_within_bounds((adj_x, adj_y)) and self.map[adj_y][adj_x] == 'r':
-                        resource_direction = direction
-                        break
-
-                if resource_direction:
-                    # If resource is adjacent, issue GATHER command
-                    command = {"command": "GATHER", "unit": unit_id, "dir": resource_direction}
-                else:
-                    # Otherwise, move south
-                    command = {"command": "MOVE", "unit": unit_id, "dir": "S"}
+                if path:
+                    # If the next tile in path is adjacent, gather
+                    next_position = path[0]
+                    direction = self.get_direction(start, next_position)
                     
+                    # Check if the resource is adjacent (for GATHER command)
+                    if len(path) == 1:
+                        command = {"command": "GATHER", "unit": unit_id, "dir": direction}
+                    else:
+                        # Move towards the resource
+                        command = {"command": "MOVE", "unit": unit_id, "dir": direction}
+                else:
+                    # If no path to a resource, continue moving south as fallback
+                    command = {"command": "MOVE", "unit": unit_id, "dir": "S"}
+                
                 commands.append(command)
 
         return json.dumps({"commands": commands}, separators=(',', ':')) + '\n'
 
+    def bfs_find_path(self, start, target='r'):
+        """
+        Find the shortest path to the nearest tile matching the target symbol.
+        Returns a list of coordinates to reach the target tile.
+        """
+        queue = deque([(start, [])])  # Queue stores tuples of (current_position, path_to_current)
+        visited = set([start])  # Set of visited positions to avoid cycles
+        
+        directions = {
+            (0, -1): 'N',
+            (0, 1): 'S',
+            (-1, 0): 'W',
+            (1, 0): 'E'
+        }
+        
+        while queue:
+            (x, y), path = queue.popleft()
+            
+            # Check if we've reached the target
+            if self.map[y][x] == target:
+                return path + [(x, y)]  # Return the path including the target tile
+            
+            # Explore neighboring positions
+            for (dx, dy), dir in directions.items():
+                neighbor = (x + dx, y + dy)
+                
+                if self.is_within_bounds(neighbor) and neighbor not in visited:
+                    nx, ny = neighbor
+                    if self.map[ny][nx] != '#':  # Avoid walls
+                        visited.add(neighbor)
+                        queue.append((neighbor, path + [(x, y)]))
+
+        return None  # Return None if no path to the target is found
+
+    def get_direction(self, start, next_position):
+        """
+        Determine direction based on the difference between current and next position.
+        """
+        dx = next_position[0] - start[0]
+        dy = next_position[1] - start[1]
+        
+        if dx == 0 and dy == -1:
+            return 'N'
+        elif dx == 0 and dy == 1:
+            return 'S'
+        elif dx == -1 and dy == 0:
+            return 'W'
+        elif dx == 1 and dy == 0:
+            return 'E'
+        return None
+
     def is_within_bounds(self, position):
         x, y = position
         return 0 <= y < len(self.map) and 0 <= x < len(self.map[0])
-
+    
+    from collections import deque
 
 if __name__ == "__main__":
     port = int(sys.argv[1]) if (len(sys.argv) > 1 and sys.argv[1]) else 9090
