@@ -78,7 +78,7 @@ class Game:
             print(''.join(row))
         print()  # Extra newline for readability
 
-    def get_command(self, json_data):
+    def get_command(self, json_data): 
         # Initialize map on the first turn if necessary
         if 'game_info' in json_data and not self.map:
             self.initialize_map(json_data['game_info'])
@@ -86,19 +86,42 @@ class Game:
 
         # Update the map with new tile and unit data each turn
         self.update_map(json_data)
-        
-        # Print the updated map
-        #self.print_map()
 
         # Generate commands for units
         commands = []
         for unit_id in self.units:
             unit = self.unit_info[unit_id]
-            if unit['type'] == 'worker':  # Example condition
-                command = {"command": "MOVE", "unit": unit_id, "dir": "S"}
+            if unit['type'] == 'worker':
+                x, y = unit['x'], unit['y']
+                
+                # Check surrounding tiles for resources
+                adjacent_tiles = {
+                    'N': (x, y - 1),
+                    'S': (x, y + 1),
+                    'W': (x - 1, y),
+                    'E': (x + 1, y)
+                }
+                resource_direction = None
+                
+                for direction, (adj_x, adj_y) in adjacent_tiles.items():
+                    if self.is_within_bounds((adj_x, adj_y)) and self.map[adj_y][adj_x] == 'r':
+                        resource_direction = direction
+                        break
+
+                if resource_direction:
+                    # If resource is adjacent, issue GATHER command
+                    command = {"command": "GATHER", "unit": unit_id, "dir": resource_direction}
+                else:
+                    # Otherwise, move south
+                    command = {"command": "MOVE", "unit": unit_id, "dir": "S"}
+                    
                 commands.append(command)
 
         return json.dumps({"commands": commands}, separators=(',', ':')) + '\n'
+
+    def is_within_bounds(self, position):
+        x, y = position
+        return 0 <= y < len(self.map) and 0 <= x < len(self.map[0])
 
 
 if __name__ == "__main__":
