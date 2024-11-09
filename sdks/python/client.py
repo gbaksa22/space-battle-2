@@ -35,7 +35,8 @@ class Game:
         self.width = 0
         self.height = 0
         self.player_id = None
-
+        self.resource_targets = []
+        self.base_target = tuple()
 
     def initialize_map(self, game_info):
         self.width = game_info['map_width']
@@ -44,7 +45,7 @@ class Game:
         self.map = [['?' for _ in range(2 * self.width + 1)] for _ in range(2 * self.height + 1)]
 
     def update_map(self, json_data):
-    # Process tile updates
+        # Process tile updates
         if 'tile_updates' in json_data:
             tile_updates = json_data['tile_updates']
             for tile in tile_updates:
@@ -54,7 +55,9 @@ class Game:
                         resource = tile['resources']
                         print(f"Resource found at ({x}, {y}): Type = {resource['type']}, Total = {resource['total']}, Value per load = {resource['value']}")
                         self.map[y][x] = 'r'  # Mark tile with 'r' for resources
+                        self.resource_targets.append((x, y))  # Corrected to (x, y)
                         print(f'resource at {x}, {y}')
+                        print(self.resource_targets)
                     elif tile['blocked']:
                         self.map[y][x] = '#'
                         print(f'wall at {x}, {y}')
@@ -115,10 +118,15 @@ class Game:
                         command = {"command": "MOVE", "unit": unit_id, "dir": "S"}
 
                 else:  # Worker is not carrying a resource
-                    # Find the nearest resource with BFS
-                    path = None
+                    # Attempt to move towards a resource if available
+                    if self.resource_targets:
+                        # Select the closest resource and use A* to find a path to it
+                        closest_resource = min(self.resource_targets, key=lambda res: self.heuristic(start, res))
+                        path = self.a_star_find_path(start, target=closest_resource)
+                    else:
+                        path = None
+
                     if path:
-                        # If path to resource found, move towards it
                         next_position = path[0]
                         direction = self.get_direction(start, next_position)
                         if len(path) == 1:
@@ -145,19 +153,27 @@ class Game:
 
         return json.dumps({"commands": commands}, separators=(',', ':')) + '\n'
 
-
-
-
-    def a_star_find_path(self, start, target='b'):
+    def reconstruct_path(self, came_from, current):
         """
-        A* search to find the shortest path to the nearest target tile (e.g., 'b' for base).
-        Returns a list of coordinates to reach the target tile.
+        Reconstructs the path from start to current node using the came_from dictionary.
+        Returns a list of coordinates from start to target.
+        """
+        path = []
+        while current in came_from:
+            path.insert(0, current)  # Insert at the beginning to build the path in correct order
+            current = came_from[current]
+        return path
+
+    def a_star_find_path(self, start, target):
+        """
+        A* search to find the shortest path to the target.
+        If target is a tuple, treat it as a specific coordinate; otherwise, assume it's a tile type ('b' or 'r').
         """
         open_set = []
         heapq.heappush(open_set, (0, start))
         came_from = {}
         g_score = {start: 0}
-        f_score = {start: self.heuristic(start, target_tile=target)}
+        f_score = {start: self.heuristic(start, target)}
 
         directions = {
             (0, -1): 'N',
@@ -169,8 +185,11 @@ class Game:
         while open_set:
             _, current = heapq.heappop(open_set)
 
-            # If we have reached the base tile, reconstruct the path
-            if self.map[current[1]][current[0]] == target:
+            # Check if we've reached the specific target location or tile type
+            if isinstance(target, tuple):  # Specific coordinate
+                if current == target:
+                    return self.reconstruct_path(came_from, current)
+            elif self.map[current[1]][current[0]] == target:  # Tile type
                 return self.reconstruct_path(came_from, current)
 
             for (dx, dy), dir in directions.items():
@@ -182,18 +201,30 @@ class Game:
                     if neighbor not in g_score or tentative_g_score < g_score[neighbor]:
                         came_from[neighbor] = current
                         g_score[neighbor] = tentative_g_score
-                        f_score[neighbor] = tentative_g_score + self.heuristic(neighbor, target_tile=target)
+                        f_score[neighbor] = tentative_g_score + self.heuristic(neighbor, target)
                         if neighbor not in [i[1] for i in open_set]:
                             heapq.heappush(open_set, (f_score[neighbor], neighbor))
 
-        return None  # Return None if no path to the base is found
+        return None  # Return None if no path to the target is found
 
-    def heuristic(self, position, target_tile='b'):
+    def heuristic(self, position, target):
         """
         Heuristic function for A* (Manhattan distance).
+        If target is a tuple, calculate Manhattan distance to it directly.
+        If target is a tile type, find the closest matching tile.
         """
-        base_pos = self.find_target_tile(target_tile)
-        return abs(position[0] - base_pos[0]) + abs(position[1] - base_pos[1])
+        if isinstance(target, tuple):
+            # If target is a specific coordinate, use Manhattan distance to it
+            return abs(position[0] - target[0]) + abs(position[1] - target[1])
+        else:
+            # Otherwise, find the closest tile of the specified type
+            base_pos = self.find_target_tile(target)
+            if base_pos is None:
+                print(f"Warning: Target tile '{target}' not found on the map.")
+                return float('inf')
+            return abs(position[0] - base_pos[0]) + abs(position[1] - base_pos[1])
+
+
 
     def find_target_tile(self, target_tile):
         """
