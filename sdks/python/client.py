@@ -84,17 +84,14 @@ class Game:
         print()  # Extra newline for readability
 
     def get_command(self, json_data):
-        # Initialize map and player_id if necessary
         if 'game_info' in json_data and not self.map:
             self.initialize_map(json_data['game_info'])
             self.player_id = json_data['player']
-            self.unit_directions = {}  # Store each worker's current direction
-            self.unit_modes = {}  # Track mode for each worker
+            self.unit_directions = {}
+            self.unit_modes = {}
 
-        # Update map with new tile and unit data each turn
         self.update_map(json_data)
 
-        # Define initial directions for each new worker
         initial_directions = ['N', 'E', 'S', 'W']
         direction_map = {'N': (0, -1), 'E': (1, 0), 'S': (0, 1), 'W': (-1, 0)}
         commands = []
@@ -104,16 +101,14 @@ class Game:
             start = (unit['x'], unit['y'])
 
             if unit['type'] == 'worker':
-                # Set initial direction and mode if not set
                 if unit_id not in self.unit_directions:
                     self.unit_directions[unit_id] = initial_directions[len(self.unit_directions) % 4]
-                    self.unit_modes[unit_id] = 'search_resource'  # Start in resource search mode
+                    self.unit_modes[unit_id] = 'search_resource'
 
-                if unit['resource'] > 0:  # Worker is carrying a resource
-                    self.unit_modes[unit_id] = 'return_to_base'  # Switch to return mode
+                if unit['resource'] > 0:
+                    self.unit_modes[unit_id] = 'return_to_base'
 
                 if self.unit_modes[unit_id] == 'return_to_base':
-                    # Find path back to base using A*
                     base_position = self.find_target_tile('b')
                     if base_position:
                         path = self.a_star_find_path(start, target=base_position)
@@ -129,9 +124,7 @@ class Game:
                         command = {"command": "MOVE", "unit": unit_id, "dir": random_direction}
 
                 elif self.unit_modes[unit_id] == 'search_resource':
-                    # Attempt to move towards a resource if available
                     if self.resource_targets:
-                        # Select the closest resource and use A* to find a path to it
                         closest_resource = min(self.resource_targets, key=lambda res: self.heuristic(start, res))
                         path = self.a_star_find_path(start, target=closest_resource)
                     else:
@@ -145,16 +138,13 @@ class Game:
                         else:
                             command = {"command": "MOVE", "unit": unit_id, "dir": direction}
                     else:
-                        # Continue in the assigned direction until blocked
                         current_direction = self.unit_directions[unit_id]
                         dx, dy = direction_map[current_direction]
                         next_position = (start[0] + dx, start[1] + dy)
 
-                        # Check if the next tile is within bounds and not a wall
                         if self.is_within_bounds(next_position) and self.map[next_position[1]][next_position[0]] != '#':
                             command = {"command": "MOVE", "unit": unit_id, "dir": current_direction}
                         else:
-                            # Change direction clockwise if a wall is hit
                             new_direction_index = (initial_directions.index(current_direction) + 1) % 4
                             new_direction = initial_directions[new_direction_index]
                             self.unit_directions[unit_id] = new_direction
@@ -165,22 +155,7 @@ class Game:
         return json.dumps({"commands": commands}, separators=(',', ':')) + '\n'
 
 
-    def reconstruct_path(self, came_from, current):
-        """
-        Reconstructs the path from start to current node using the came_from dictionary.
-        Returns a list of coordinates from start to target.
-        """
-        path = []
-        while current in came_from:
-            path.insert(0, current)  # Insert at the beginning to build the path in correct order
-            current = came_from[current]
-        return path
-
     def a_star_find_path(self, start, target):
-        """
-        A* search to find the shortest path to the target.
-        If target is a tuple, treat it as a specific coordinate; otherwise, assume it's a tile type ('b' or 'r').
-        """
         open_set = []
         heapq.heappush(open_set, (0, start))
         came_from = {}
@@ -197,17 +172,13 @@ class Game:
         while open_set:
             _, current = heapq.heappop(open_set)
 
-            # Check if we've reached the specific target location or tile type
-            if isinstance(target, tuple):  # Specific coordinate
-                if current == target:
-                    return self.reconstruct_path(came_from, current)
-            elif self.map[current[1]][current[0]] == target:  # Tile type
+            if current == target:
                 return self.reconstruct_path(came_from, current)
 
             for (dx, dy), dir in directions.items():
                 neighbor = (current[0] + dx, current[1] + dy)
 
-                if self.is_within_bounds(neighbor) and self.map[neighbor[1]][neighbor[0]] != '#':  # Avoid walls
+                if self.is_within_bounds(neighbor) and self.map[neighbor[1]][neighbor[0]] != '#':
                     tentative_g_score = g_score[current] + 1
 
                     if neighbor not in g_score or tentative_g_score < g_score[neighbor]:
@@ -218,18 +189,22 @@ class Game:
                             heapq.heappush(open_set, (f_score[neighbor], neighbor))
 
         return None  # Return None if no path to the target is found
+    
+    def reconstruct_path(self, came_from, current):
+        """
+        Reconstructs the path from start to current node using the came_from dictionary.
+        Returns a list of coordinates from start to target.
+        """
+        path = []
+        while current in came_from:
+            path.insert(0, current)  # Insert at the beginning to build the path in the correct order
+            current = came_from[current]
+        return path
 
     def heuristic(self, position, target):
-        """
-        Heuristic function for A* (Manhattan distance).
-        If target is a tuple, calculate Manhattan distance to it directly.
-        If target is a tile type, find the closest matching tile.
-        """
         if isinstance(target, tuple):
-            # If target is a specific coordinate, use Manhattan distance to it
             return abs(position[0] - target[0]) + abs(position[1] - target[1])
         else:
-            # Otherwise, find the closest tile of the specified type
             base_pos = self.find_target_tile(target)
             if base_pos is None:
                 print(f"Warning: Target tile '{target}' not found on the map.")
