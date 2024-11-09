@@ -89,6 +89,7 @@ class Game:
             self.initialize_map(json_data['game_info'])
             self.player_id = json_data['player']
             self.unit_directions = {}  # Store each worker's current direction
+            self.unit_modes = {}  # Track mode for each worker
 
         # Update map with new tile and unit data each turn
         self.update_map(json_data)
@@ -103,22 +104,31 @@ class Game:
             start = (unit['x'], unit['y'])
 
             if unit['type'] == 'worker':
-                # Assign initial direction to each worker if not set
+                # Set initial direction and mode if not set
                 if unit_id not in self.unit_directions:
                     self.unit_directions[unit_id] = initial_directions[len(self.unit_directions) % 4]
+                    self.unit_modes[unit_id] = 'search_resource'  # Start in resource search mode
 
                 if unit['resource'] > 0:  # Worker is carrying a resource
+                    self.unit_modes[unit_id] = 'return_to_base'  # Switch to return mode
+
+                if self.unit_modes[unit_id] == 'return_to_base':
                     # Find path back to base using A*
-                    path = self.a_star_find_path(start, target='b')
-                    if path:
-                        next_position = path[0]
-                        direction = self.get_direction(start, next_position)
-                        command = {"command": "MOVE", "unit": unit_id, "dir": direction}
+                    base_position = self.find_target_tile('b')
+                    if base_position:
+                        path = self.a_star_find_path(start, target=base_position)
+                        if path:
+                            next_position = path[0]
+                            direction = self.get_direction(start, next_position)
+                            command = {"command": "MOVE", "unit": unit_id, "dir": direction}
+                        else:
+                            random_direction = random.choice(self.directions)
+                            command = {"command": "MOVE", "unit": unit_id, "dir": random_direction}
                     else:
                         random_direction = random.choice(self.directions)
                         command = {"command": "MOVE", "unit": unit_id, "dir": random_direction}
 
-                else:  # Worker is not carrying a resource
+                elif self.unit_modes[unit_id] == 'search_resource':
                     # Attempt to move towards a resource if available
                     if self.resource_targets:
                         # Select the closest resource and use A* to find a path to it
@@ -153,6 +163,7 @@ class Game:
                 commands.append(command)
 
         return json.dumps({"commands": commands}, separators=(',', ':')) + '\n'
+
 
     def reconstruct_path(self, came_from, current):
         """
