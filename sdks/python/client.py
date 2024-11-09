@@ -30,7 +30,41 @@ class Game:
     def __init__(self):
         self.units = {}  # Dictionary to store unit details by unit ID
         self.directions = ['N', 'S', 'E', 'W']
-        self.map = [[' ' for _ in range(10)] for _ in range(10)]  # Example 10x10 grid map for simplicity
+        self.map = []  # 2D array for the game map
+        self.width = 0
+        self.height = 0
+        self.player_id = None
+        #self.map = [[' ' for _ in range(10)] for _ in range(10)]  # Example 10x10 grid map for simplicity
+
+    def initialize_map(self, game_info):
+        self.width = game_info['map_width']
+        self.height = game_info['map_height']
+        # Creates a 2D array filled with '?'
+        self.map = [['?' for _ in range(2 * self.width + 1)] for _ in range(2 * self.height + 1)]
+
+    def update_map(self, tile_updates, unit_updates):
+        # Update map based on tile updates
+        for tile in tile_updates:
+            x, y = tile['x'], tile['y']
+            if tile['blocked']:
+                self.map[y][x] = '#'
+            elif tile['resources']:
+                self.map[y][x] = 'R'
+            elif tile['units']:
+                self.map[y][x] = 'E'
+            else:
+                self.map[y][x] = ' '
+
+        # Update map based on unit updates
+        for unit in unit_updates:
+            x, y = unit['x'], unit['y']
+            if unit['type'] == 'base' and unit['player_id'] == self.player_id:
+                self.map[y][x] = 'B'
+            elif unit['player_id'] != self.player_id:
+                self.map[y][x] = 'E'
+
+    def get_map(self):
+        return self.map
 
     def get_command(self, json_data):
         # Update units and resources based on incoming JSON data
